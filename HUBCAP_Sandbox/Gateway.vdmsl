@@ -1,0 +1,8 @@
+types 
+
+--GateWaySt ::
+--	connectedClients : ConnectedClients
+--	connectedServers : ConnectedServers;
+
+--ConnectedClients = set of ClientId;
+--ConnectedServers = set of ServerId;

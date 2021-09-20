@@ -1,0 +1,9 @@
+types
+
+ServerId = nat;
+Data = token;
+
+Server::
+	serverId : ServerId
+	toolId : ToolId
+	data : Data

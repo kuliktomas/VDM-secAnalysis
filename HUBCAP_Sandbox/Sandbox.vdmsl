@@ -1,0 +1,11 @@
+
+types 
+SandboxId = nat;
+SandboxServers = map ServerId to Server;
+UploadedData = set of token;
+
+Sandbox:: 
+ sandboxId : SandboxId
+ sandboxServers : SandboxServers
+ uploadedData : UploadedData
+

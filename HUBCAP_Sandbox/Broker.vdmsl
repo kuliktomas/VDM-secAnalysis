@@ -1,0 +1,258 @@
+types 
+
+BrokerSt ::
+ providers : Providers
+ --validSandboxes : ValidSandboxes
+ consumers : Consumers
+ validModels : ValidModels
+ activeSandboxes : ActiveSandboxes
+ validTools : ValidTools
+ validOSs : ValidOSs
+ owners : Owners
+ guests : Guests
+ errorLog : ErrorLog
+ sandboxModels : SandboxModels
+ sandboxTools : SandboxTools
+ sandboxOSs : SandboxOSs;
+
+OSId = nat; 
+ModelId = nat;
+ToolId = nat;
+ToolIds = set of ToolId;
+ModelIds = set of ModelId;
+--ValidSandboxes = set of SandboxId;
+ValidModels = set of ModelId;
+ValidTools = map ToolId to Tool;
+ValidOSs = set of OSId;
+Providers = set of ClientId;
+--Providers= map clientId to set of sandboxId;
+Consumers = set of ClientId;
+--Consumers = map clientId to set of sandboxId;
+Owners = map ClientId to set of SandboxId;
+Guests = map ClientId to set of SandboxId;
+ActiveSandboxes = set of SandboxId;
+ToolOwners = map ClientId to set of ToolId;
+ModelOwners = map ClientId to set of ModelId;
+SandboxModels = map SandboxId to set of ModelId;
+SandboxTools = map SandboxId to set of ToolId;
+SandboxOSs = map SandboxId to set of OSId;
+ErrorLog = seq of token;
+
+functions 
+ClientIsNull: ClientId * Providers * Consumers * Owners * Guests -> bool
+ClientIsNull(cId, ps, cs, os, gs)== 
+  cId not in set ps and 
+  cId not in set cs and 
+  cId not in set dom os and 
+  cId not in set dom gs;
+
+-- TODO Define functions here
+operations 
+pure SelectOperatingSystem: OSId * ClientId ==> [nat]
+SelectOperatingSystem(osId, cId) == 
+  return if osId in set brokerst.validOSs
+  			 then osId 
+  			 else nil
+pre cId in set brokerst.providers or cId in set brokerst.consumers;
+-- return a tool Id
+
+pure SelectTool: ToolId * ClientId ==> [nat]
+SelectTool(tId, cId) == 
+  return if tId in set dom brokerst.validTools
+         then tId
+         else nil
+pre cId in set brokerst.providers or cId in set brokerst.consumers;
+-- return a model Id
+
+pure SelectTools: ToolIds * ClientId ==> set of ToolId
+SelectTools(tIds, cId) ==
+	return if tIds subset dom brokerst.validTools  --brokerst.validTools
+				 then tIds
+				 else nil
+pre cId in set brokerst.providers or cId in set brokerst.consumers;
+
+pure SelectModel: ModelId * ClientId ==> [nat]
+SelectModel(mId, cId) == 
+  return if mId in set brokerst.validModels 
+         then mId
+	       else nil
+pre cId in set brokerst.providers or cId in set brokerst.consumers;	
+
+pure SelectModels: ModelIds * ClientId ==> set of ModelId
+SelectModels(mIds, cId) ==
+	return if mIds subset brokerst.validModels
+				 then mIds
+				 else nil
+pre cId in set brokerst.providers or cId in set brokerst.consumers;				 
+	
+-- upload new model
+BrokerUploadNewModel: ClientId * ModelId ==> ()
+BrokerUploadNewModel(cId, mId) == 
+  brokerst.validModels := brokerst.validModels union {mId}
+pre cId in set brokerst.providers;
+
+-- connect to sandbox (will connect to all servers under the sandbox)
+BrokerInitiateSandboxAccess: ClientId * SandboxId ==> bool
+BrokerInitiateSandboxAccess(cId, sId) == 
+	let sandboxes = GetSystemSandboxes(),
+	    servers = dunion {dom s.sandboxServers | s in set rng sandboxes & s.sandboxId = sId} 
+	in 
+	  (for all x in set servers do
+	     UpdateConnections(cId, x, sId, true);
+	   return true) -- one needs to enable the UpdateConnections operation to report if it was ok
+pre not ClientIsNull(cId, brokerst.providers, brokerst.consumers, brokerst.owners, brokerst.guests)
+and 
+((cId in set dom brokerst.owners and sId in set brokerst.owners(cId))
+	or(cId in set dom brokerst.guests and sId in set brokerst.guests(cId)));
+
+
+-- Remove the connection (i.e. the client disconnects from sandbox)
+BrokerDisconnectFromSandbox: ClientId * SandboxId ==>()
+BrokerDisconnectFromSandbox(cId, sId) == 
+(
+	let sandboxes = GetSystemSandboxes(),
+	    servers = dunion {dom sandboxes(sid).sandboxServers | sid in set dom sandboxes & sandboxes(sid).sandboxId = sId} 
+	in
+	  for all x in set servers do
+	     UpdateConnections(cId, x, sId, false);
+);
+
+--If connection is not able to be established
+GetError: ClientId * token ==> ()
+GetError(-, err) == 
+  brokerst.errorLog := brokerst.errorLog ^ [err];
+  
+-- Operation removing repository items, covers tools and models
+BrokerDeleteRepositoryItem : ClientId * [ModelId] * [ToolId] ==> ()
+BrokerDeleteRepositoryItem(cId, mId, tId) ==
+if mId <> nil and mId in set brokerst.validModels 
+then brokerst.validModels := brokerst.validModels \ {mId}
+elseif tId in set dom brokerst.validTools
+then brokerst.validTools :=  dom brokerst.validTools <-: {tId |-> brokerst.validTools(tId)}
+pre mId <> 0 => (cId in set brokerst.providers
+                and 
+                cId in set dom modelOwners 
+                and
+                mId in set modelOwners(cId)) or 
+   tId <> 0 => (cId in set brokerst.providers 
+                and 
+                cId in set dom toolOwners 
+                and
+                tId in set toolOwners(cId));
+
+-- Add guest to the sandbox
+BrokerAddGuest: ClientId * ClientId * SandboxId ==> ()
+BrokerAddGuest(invitor, cId, sId) == 
+  brokerst.guests(cId) := (if cId in set dom brokerst.guests
+                           then brokerst.guests(cId)
+                           else {})
+                           union {sId}
+pre (invitor in set brokerst.providers 
+     or 
+     invitor in set brokerst.consumers)
+     and 
+     invitor in set dom brokerst.owners 
+     and
+     sId in set brokerst.owners(invitor); 
+
+BrokerUploadANewModel: ClientId * ModelId * SandboxId ==> ()
+BrokerUploadANewModel(cId, mId, sId) ==
+(	brokerst.validModels := brokerst.validModels union {mId};
+	brokerst.sandboxModels(sId) := (if sId in set dom brokerst.sandboxModels
+	                                then brokerst.sandboxModels(sId)
+	                                else {})
+	                               union {mId}
+)
+pre cId in set brokerst.providers 
+	and
+	cId in set dom brokerst.owners
+	and
+	sId in set brokerst.owners(cId); 
+
+SaveTool: ClientId * OSId * Version * Private * OsOnly ==> ()
+SaveTool(cId, oId, v, p, oo) == 
+let newToolId = GenerateNewToolId()
+	in(
+		brokerst.validTools := brokerst.validTools munion {newToolId |-> mk_Tool(oId, v, p, oo, cId)};
+		if cId not in set dom toolOwners then
+			toolOwners := toolOwners munion {cId |-> {newToolId}}
+		else
+			toolOwners(cId) := toolOwners(cId) union {newToolId}	
+)
+pre cId in set brokerst.providers
+post card dom brokerst.validTools = card dom brokerst~.validTools + 1;
+
+-- Uploading new tool version overwrites the version field
+UploadNewToolVersion: ClientId * ToolId ==> ()
+UploadNewToolVersion(cId, tId) == 
+let tool = brokerst.validTools(tId)
+in 
+	let updatedTool = mu (tool, version |-> tool.version + 1)
+	in
+		(brokerst.validTools := dom brokerst.validTools <-: {tId |-> tool};
+		brokerst.validTools := brokerst.validTools munion {tId |-> updatedTool})
+pre tId <> 0 => (cId in set brokerst.providers 
+                and 
+                cId in set dom toolOwners 
+                and
+                tId in set toolOwners(cId))
+post tId in set dom brokerst.validTools
+			and (brokerst.validTools(tId)).version = 
+					(brokerst~.validTools(tId)).version + 1;
+			
+-- Destroying the sandbox removes it from known system sandboxes
+DestroySandbox : ClientId * SandboxId ==> ()
+DestroySandbox(cId, sId) == 
+(systemSandboxes := {sId} <-: systemSandboxes;
+brokerst.owners(cId) := brokerst.owners(cId) \ {sId})
+pre cId in set dom brokerst.owners
+	and 
+	sId in set brokerst.owners(cId)
+	and 
+	not sId in set brokerst.activeSandboxes
+post
+	sId not in set brokerst.owners(cId);
+
+-- model is not mandatory when starting a new sandbox
+StartNewSandbox : ClientId * set of ToolId * set of ModelId  ==> SandboxId
+StartNewSandbox(cId, tId, mId) == 
+let sId = GenerateNewSandboxId()
+in
+	(brokerst.sandboxOSs := brokerst.sandboxOSs munion {sId |-> GetToolOSs(GetToolsByToolIds(tId, brokerst.validTools))}; -- here must get OSs from the tools
+		--if mId <> {} then
+			brokerst.sandboxModels := brokerst.sandboxModels munion {sId |-> mId};
+		--if tId <> {} then
+			(brokerst.sandboxTools := brokerst.sandboxTools munion {sId |-> tId};
+			systemSandboxes := systemSandboxes munion {sId |-> mk_Sandbox(sId, BuildNewServers(tId,mk_token(nil)), {})}); -- this will need to be updated to provide actual server Ids	
+		if cId in set dom brokerst.owners then
+			brokerst.owners(cId) := brokerst.owners(cId) union {sId}
+		else
+			brokerst.owners := brokerst.owners munion {cId |-> {sId}};	
+		return sId
+	)
+pre tId <> {} and tId subset dom brokerst.validTools
+		and (mId <> {} => mId subset brokerst.validModels)
+post card dom systemSandboxes = card dom systemSandboxes~ + 1
+		and cId in set dom brokerst.owners
+		--and Max(systemSandboxes) in set brokerst.owners(cId)
+		and RESULT in set dom systemSandboxes;
+		
+-- upload archive to a specific Sandbox
+UploadArchiveToSandbox: ClientId * SandboxId * token ==> ()
+UploadArchiveToSandbox(cId, sbId, arch) == 
+	systemSandboxes(sbId).uploadedData := systemSandboxes(sbId).uploadedData union {arch}
+pre (cId in set brokerst.providers or cId in set brokerst.consumers) and 
+		((cId in set dom brokerst.owners and sbId in set brokerst.owners(cId)) or
+		(cId in set dom brokerst.guests) and sbId in set brokerst.guests(cId))
+post card systemSandboxes(sbId).uploadedData = card systemSandboxes~(sbId).uploadedData + 1; 	
+
+-- download archive from a specific Server
+DownloadArchiveFromServer: ClientId * ServerId * SandboxId ==> token
+DownloadArchiveFromServer(cId, sId, sbId) == 
+if systemSandboxes(sbId).sandboxServers(sId).data <> mk_token(nil) then
+	return systemSandboxes(sbId).sandboxServers(sId).data
+else
+	return mk_token(nil)
+pre sbId in set brokerst.owners(cId);
+
+

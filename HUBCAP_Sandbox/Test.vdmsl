@@ -1,0 +1,255 @@
+
+operations
+SetupClients: ClientId ==>()
+SetupClients(cId) == validClients:= validClients union {cId};
+
+SetupOSs: OSId ==> ()
+SetupOSs(osId) == brokerst.validOSs:= brokerst.validOSs union {osId};
+
+SetupTools: ToolId * OSId * Version * Private * OsOnly * ClientId ==> ()
+SetupTools(tId, oId, v, p, oo, cId) == brokerst.validTools := brokerst.validTools munion {tId |-> mk_Tool(oId, v, p, oo, cId)};
+
+SetupToolOwners: ClientId * ToolId ==> ()
+SetupToolOwners(cId, tId) == toolOwners := toolOwners munion {cId |-> {tId}};
+
+SetupModels: ModelId ==> ()
+SetupModels(mId) ==  brokerst.validModels := brokerst.validModels union {mId};
+
+SetupProviders: ClientId ==> ()
+SetupProviders(cId) == brokerst.providers := brokerst.providers union {cId};
+
+SetupConsumers: ClientId ==> ()
+SetupConsumers(cId) == brokerst.consumers := brokerst.consumers union {cId};
+
+AppearDataInAVM: SandboxId * ServerId ==> ()
+AppearDataInAVM(sbId, sId) ==  systemSandboxes(sbId).sandboxServers(sId).data := mk_token(1);
+
+traces
+--Create Sandbox
+CreateSandbox:
+SetupClients(1);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1, false,false, 1);
+SetupToolOwners(1,1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId)
+);
+
+--Create Sandbox multiple clients
+CreateSandboxMultipleClients:
+SetupClients(1);
+SetupClients(2);
+SetupClients(3);
+SetupProviders(1);
+SetupConsumers(2);
+SetupOSs(1);
+SetupTools(1,1,1, false,false, 1);
+SetupToolOwners(1,1);
+SetupModels(1);
+let clientId in set {1, 2, 3}
+in 
+(SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId)
+);
+
+--Create Sandbox without a model
+CreateSandboxNoModel:
+SetupClients(1);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1, false,false, 1);
+let clientId in set {1}
+in 
+(SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {});
+ LaunchNewSandbox(clientId)
+);
+
+--Create Sandbox without a model and a tool
+CreateSandboxNoModelNoTool:
+SetupClients(1);
+SetupProviders(1);
+SetupOSs(1);
+let clientId in set {1}
+in 
+(SelectToolsFromRepository(clientId, {});
+ SelectModelsFromRepository(clientId, {});
+ LaunchNewSandbox(clientId)
+);
+
+--Create Sandbox consumer
+CreateSandboxConsumer:
+SetupClients(1);
+SetupConsumers(1);
+SetupOSs(1);
+SetupTools(1,1,1, false,false, 1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId)
+);
+
+--Create sandbox valid user but not consumer or provider
+CreateSandboxNull:
+SetupClients(1);
+SetupOSs(1);
+SetupTools(1,1,1,false, false, 1);
+--SetupModels(1);
+let clientId in set {1}
+in 
+(
+ SelectToolsFromRepository(clientId, {1});
+ --SelectModelFromRepository(clientId, 1);
+ LaunchNewSandbox(clientId)
+);
+
+--Create sandbox and connect to it
+CreateSandboxAndConnect:
+SetupClients(1);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1, false,false, 1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectOS(clientId, 1);
+ SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId);
+ AccessSandbox(clientId, 1)
+);
+
+--Create sandbox and connect uninvited client
+CreateSandboxAndUninvitedConnect:
+SetupClients(1);
+SetupClients(2);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1,false,false, 1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectOS(clientId, 1);
+ SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId);
+ AccessSandbox(2, 1)
+);
+
+--Create sandbox and connect to it and disconnect
+CreateSandboxAndConnectAndDisconnect:
+SetupClients(1);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1,false,false, 1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectOS(clientId, 1);
+ SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId);
+ AccessSandbox(clientId, 1);
+ DisconnectFromSandbox(clientId, 1)
+);
+
+--Create sandbox and invite guest
+CreateSandboxAndInviteGuest:
+SetupClients(1);
+SetupClients(2);
+SetupConsumers(2);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1,false,false, 1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectOS(clientId, 1);
+ SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId);
+ InviteGuest(clientId, 2, 1)
+);
+
+--Create sandbox and invite guest and guest connect
+CreateSandboxAndInviteGuestAndGuestConnect:
+SetupClients(1);
+SetupClients(2);
+SetupConsumers(2);
+SetupProviders(1);
+SetupOSs(1);
+SetupTools(1,1,1,false,false,1);
+SetupModels(1);
+let clientId in set {1}
+in 
+(SelectOS(clientId, 1);
+ SelectToolsFromRepository(clientId, {1});
+ SelectModelsFromRepository(clientId, {1});
+ LaunchNewSandbox(clientId);
+ InviteGuest(clientId, 2, 1);
+ AccessSandbox(2, 1)
+);
+
+-- Create sandbox and try to download data from a specific server
+DownloadDataFromAServer:
+SetupClients(1);
+SetupConsumers(1);
+SetupOSs(1);
+SetupTools(1,1,1,false,false,1);
+SetupModels(1);
+let clientId in set {1}
+in
+(SelectToolsFromRepository(clientId, {1});
+	SelectModelsFromRepository(clientId, {1});
+	LaunchNewSandbox(clientId);
+	LaunchNewSandbox(clientId);
+	AppearDataInAVM(1,1);
+	let sandboxId in set {1,2}
+	in(
+	DownloadArchive(clientId, 1, sandboxId);
+ )
+);
+
+-- Update existing tool
+UpdateExistingTool:
+SetupClients(1);
+SetupProviders(1);
+SetupOSs(1);
+UploadTool(1, 1, 1, false, false);
+UpdateTool(1, 1);
+
+--Upload data to a sandbox
+UploadArchiveTrace:
+SetupClients(1);
+SetupProviders(1);
+SetupTools(1,1,1,false,false,1);
+SetupModels(1);
+let clientId in set {1}
+in(
+ 	SelectToolsFromRepository(clientId, {1});
+	SelectModelsFromRepository(clientId, {1});
+	LaunchNewSandbox(clientId);
+	UploadArchive(clientId, 1, mk_token(1));
+);
+
+--Check private tools
+CheckPrivateToolAccess:
+SetupClients(1);
+SetupClients(2);
+SetupProviders(1);
+SetupProviders(2);
+SetupOSs(1);
+UploadTool(1, 1, 1, true, false);
+let clientId in set {1,2}
+in( 
+ SelectToolsFromRepository(clientId, {1});
+);
+

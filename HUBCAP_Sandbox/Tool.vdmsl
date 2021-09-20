@@ -1,0 +1,13 @@
+types
+
+Version = nat;
+Private = bool;
+OsOnly = bool;
+Owner = ClientId;
+
+Tool::
+	osId : OSId
+	version : Version
+	private : Private
+	osOnly : OsOnly
+	owner : Owner 

@@ -1,0 +1,130 @@
+
+state SystemSt of
+	gatewayConnections : GatewayConnections
+	gatewayConnectionsSandbox : GatewayConnectionsSandbox
+	systemSandboxes : SystemSandboxes
+  toolOwners : ToolOwners
+  modelOwners : ModelOwners
+	brokerst : BrokerSt
+	clientst: ClientSt
+	validClients : ValidClients
+	systemServers : SystemServers
+	
+inv ss == dom ss.gatewayConnections = dom ss.gatewayConnectionsSandbox 	
+init s == s = mk_SystemSt({|->},{|->},{|->},{|->},{|->},
+                          mk_BrokerSt({},{},{},{},{|->},{},{|->},{|->},[],{|->},{|->},{|->}),
+                          mk_ClientSt(nil,nil,nil,{},{},{},0),{},{})
+end 
+
+types 
+GatewayConnections = map ClientId to set of ServerId;
+GatewayConnectionsSandbox = map ClientId to set of SandboxId;
+SystemSandboxes = map SandboxId to Sandbox;
+ValidClients = set of ClientId;
+SystemServers = set of ServerId; 
+
+-- TODO Define types here
+values 
+-- TODO Define values here
+functions 
+-- check the client is currently connected to the sandbox
+IsConnectedToSandbox: ClientId * SandboxId * GatewayConnectionsSandbox -> bool
+IsConnectedToSandbox(cId, sId, gcs) == 
+  cId in set dom gcs and sId in set gcs(cId);
+
+GetToolsByToolIds: set of ToolId * map ToolId to Tool -> set of Tool
+GetToolsByToolIds(tIds,valTools) ==
+	{t | t in set rng valTools & tIds subset dom valTools};
+	
+	-- Gets all OSIds for tools to be used within a sandbox  
+GetToolOSs: set of Tool -> set of OSId
+GetToolOSs(tools) ==
+ {t.osId | t in set tools};
+
+-- Get the latest max sandbox Id
+Max: SystemSandboxes -> SandboxId
+Max(ss) ==
+  if ss = {|->} then 0
+  else let max in set dom ss be st forall d in set dom ss & d <= max
+       in
+         max;
+
+-- Get the latest tool Id
+MaxTool : ValidTools -> nat
+MaxTool(vts) == 
+  if vts = {|->} then 0
+  else let max in set dom vts be st forall d in set dom vts & d <=max
+       in
+         max;
+	
+-- Get the latest server Id
+MaxServer : SystemServers -> nat
+MaxServer(ss) == 
+  if ss = {} then 0
+  else let max in set ss be st forall d in set ss & d <=max
+       in
+         max;		
+
+operations 
+
+-- Get private tools Ids by tool Id
+pure GetPrivateToolsByToolId: set of ToolId * map ToolId to Tool ==> set of Tool
+GetPrivateToolsByToolId(tIds, valTools) ==(
+	dcl tools: map ToolId to Tool := {|->};
+	tools := tIds <: valTools;
+	return {t | t in set rng tools & t.private = true})
+pre tIds subset dom valTools;
+
+UpdateConnections: ClientId * ServerId * SandboxId * bool ==> ()
+UpdateConnections(cId, sId, sbId, connect)== 
+  if connect 
+  then (if cId in set dom gatewayConnections 
+       then atomic
+            (gatewayConnections(cId):= gatewayConnections(cId) union {sId};
+		         gatewayConnectionsSandbox(cId) := gatewayConnectionsSandbox(cId) union {sbId};
+		         brokerst.activeSandboxes := brokerst.activeSandboxes union {sbId})
+		         else atomic
+		         (gatewayConnections := gatewayConnections munion {cId|-> {sId}};
+		         gatewayConnectionsSandbox := gatewayConnectionsSandbox munion {cId |-> {sbId}};
+		         brokerst.activeSandboxes := brokerst.activeSandboxes union {sbId}))
+  else atomic
+  --elseif cId in set dom gatewayConnections 
+	--then 
+		   (gatewayConnections(cId) := gatewayConnections(cId) \ {sId};
+		    gatewayConnectionsSandbox(cId) := gatewayConnectionsSandbox(cId) \ {sbId};
+		    brokerst.activeSandboxes := brokerst.activeSandboxes \ {sbId})
+pre (connect=false) => cId in set dom gatewayConnections;
+
+pure GetSystemSandboxes: () ==> map SandboxId to Sandbox
+GetSystemSandboxes() == 
+  return systemSandboxes;
+
+pure GetGatewaySandboxConnections: () ==> GatewayConnectionsSandbox
+GetGatewaySandboxConnections() == 
+  return gatewayConnectionsSandbox;
+ 
+BuildNewServers: set of ToolId * Data ==> map ServerId to Server
+BuildNewServers(tId, d) ==
+(
+dcl servers : map ServerId to Server := {|->}; 
+for all t in set tId do 
+	let newServerId = GenerateNewServerId()
+	in(
+		systemServers:= systemServers union {newServerId};
+		servers := servers munion {newServerId |-> mk_Server(newServerId, t, d)};
+);
+return servers;);
+
+-- Provide Id for a new sandbox  
+GenerateNewSandboxId: () ==> SandboxId
+GenerateNewSandboxId() == 
+  return Max(systemSandboxes) + 1;
+  
+GenerateNewToolId:()==> nat
+GenerateNewToolId()==
+	return MaxTool(brokerst.validTools) + 1;
+		
+GenerateNewServerId:()==> nat
+GenerateNewServerId()==
+	return MaxServer(systemServers) + 1;
+	

@@ -1,0 +1,119 @@
+types 
+
+ClientSt::
+	selectedTool : SelectedTool
+	selectedOS : SelectedOS
+	selectedModel : SelectedModel
+	selectedTools : SelectedTools
+	selectedModels : SelectedModels
+	downloadedData : DownloadedData
+	latestSandbox : SandboxId;
+
+
+ClientId = nat;
+--ServerId = nat;
+--KnownSandboxes = set of SandboxId;
+--Errors = set of token;
+SelectedTool = [nat];
+SelectedOS = [nat];
+SelectedModel = [nat];
+--SelectedServer = [nat];
+SelectedTools = set of nat;
+--SelectedServers = set of nat;
+SelectedModels = set of nat;
+DownloadedData = set of Data;
+--AccessMapping = map ClientId to ServerId;
+
+operations 
+-- Connect to the sandbox
+AccessSandbox: ClientId * SandboxId ==> ()
+AccessSandbox(cId, sId) == 
+	if not BrokerInitiateSandboxAccess(cId, sId)  
+	then GetError(cId, mk_token(1))
+pre cId in set validClients;
+
+-- Disconnect client from sandbox
+DisconnectFromSandbox: ClientId * SandboxId ==> ()
+DisconnectFromSandbox(cId, sId) ==
+  BrokerDisconnectFromSandbox(cId, sId)
+pre IsConnectedToSandbox(cId, sId, GetGatewaySandboxConnections()) and cId in set validClients;
+
+-- Remove own repository item
+RemoveRepositoryItem: ClientId * SandboxId * ToolId ==> ()
+RemoveRepositoryItem(cId, sId, tId) == 
+  BrokerDeleteRepositoryItem(cId, sId, tId)
+pre cId in set validClients;
+
+-- Upload a model to the repository
+UploadNewModel: ClientId * ModelId * SandboxId ==> ()
+UploadNewModel(cId, mId, sId) == 
+  BrokerUploadANewModel(cId, mId, sId)
+pre cId in set validClients;
+
+-- InviteGuest
+InviteGuest: ClientId * ClientId * SandboxId ==> ()
+InviteGuest(cId, cguestId, sId)== 
+  BrokerAddGuest(cId, cguestId, sId)
+pre cId in set validClients;
+
+-- Select Tools
+SelectToolsFromRepository: ClientId * SelectedTools ==> ()
+SelectToolsFromRepository(cId, tIds) ==
+	clientst.selectedTools := SelectTools(tIds, cId)
+pre cId in set validClients and 
+		GetPrivateToolsByToolId(tIds, brokerst.validTools) <> {} =>
+			forall t in set GetPrivateToolsByToolId(tIds, brokerst.validTools) & t.owner = cId;
+
+-- Select Models
+SelectModelsFromRepository: ClientId * SelectedModels ==> ()
+SelectModelsFromRepository(cId, mIds) ==
+	clientst.selectedModels := SelectModels(mIds, cId)
+pre cId in set validClients;
+
+-- Select OS
+SelectOS : ClientId * OSId ==> ()
+SelectOS(cId, oId) ==
+	clientst.selectedTool := SelectOperatingSystem(cId, oId)
+pre cId in set validClients;
+
+-- Launch sandbox 
+LaunchNewSandbox: ClientId ==> ()
+LaunchNewSandbox(cId) == 
+	def r = StartNewSandbox(cId, clientst.selectedTools, clientst.selectedModels)
+	in(clientst.latestSandbox := r)
+pre cId in set validClients;
+
+-- Remove Sandbox
+RemoveSandbox : ClientId * SandboxId ==> ()
+RemoveSandbox(cId, sId) == 
+  DestroySandbox(cId, sId)
+pre cId in set validClients;
+
+-- Upload new tool 
+UploadTool : ClientId * OSId * Version * Private * OsOnly ==> ()
+UploadTool(cId, oId, v, p, oo) == 
+	SaveTool(cId, oId, v, p, oo)
+pre cId in set validClients and oId in set brokerst.validOSs;
+
+--Update tool (only providers can update their own tools)
+UpdateTool : ClientId * ToolId ==> ()
+UpdateTool(cId, tId) == 
+	UploadNewToolVersion(cId, tId)
+pre cId in set validClients;
+
+-- Launch sandbox with very specific access map (servers within the sandbox are accessible by different users)
+--LaunchPrivateSandbox : ClientId * AccessMapping ==> ()
+--LaunchPrivateSandbox(cId, am) == is not yet specified;
+
+-- Upload an archive to a sandbox
+UploadArchive : ClientId * SandboxId * token ==> ()
+UploadArchive(cId, sbId, arch) == 
+	UploadArchiveToSandbox(cId, sbId, arch)
+pre cId in set validClients;
+
+-- Download an archive from a specific VM
+DownloadArchive : ClientId * ServerId * SandboxId ==> ()
+DownloadArchive(cId, sId, sbId) == 
+clientst.downloadedData := clientst.downloadedData union {DownloadArchiveFromServer(cId, sId, sbId)}
+pre cId in set validClients
+post card clientst.downloadedData = card clientst~.downloadedData + 1;
